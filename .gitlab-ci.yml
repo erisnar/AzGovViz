@@ -1,0 +1,42 @@
+azure-governance-visualizer:
+  stage: test
+  image: <PATH-TO-CONTAINER-REGISTRY>/azuregovernancevisualizer:<VERSION>
+  variables:
+    installModuleUserChoice: "n"
+    tenantId: $ARM_TENANT_ID
+    subscriptionId: $ARM_SUBSCRIPTION_ID
+    clientId: $ARM_CLIENT_ID
+    clientSecret: $ARM_CLIENT_SECRET
+    fileName: "home.md"
+    fileNameCanary: "canary.md"
+  script:
+    # clone wiki
+    - export WIKI_URL="<PATH-TO-REPO>.wiki.git"
+    - cd /tmp
+    - git clone "${WIKI_URL}"
+    - mkdir prod
+    - mkdir canary
+
+    # clone azgovviz repo
+    - git clone <PATH-TO-REPO>/azure-governance-visualizer-aka-azgovviz.git
+
+    # run the powershell script
+    - cd azure-governance-visualizer-aka-azgovviz/pwsh
+    - pwsh -c '.\auth.ps1' # authenticate with service principal
+    - pwsh -c '.\AzGovVizParallel.ps1 -ManagementGroupId <ManagementGroupId> -OutputPath prod -NoCsvExport -NoJsonExport -NoStorageAccountAccessAnalysis'
+    - pwsh -c '.\AzGovVizParallel.ps1 -ManagementGroupId <ManagementGroupId-CANARY> -OutputPath canary -NoCsvExport -NoJsonExport -NoStorageAccountAccessAnalysis'
+    
+    # set committer info
+    - cd ${CI_PROJECT_NAME}.wiki
+    - git config user.name "$GITLAB_USER_NAME"
+    - git config user.email "$GITLAB_USER_EMAIL"
+
+    # commit the file
+    - mv prod/*.md $fileName
+    - mv canary/*.md $fileNameCanary
+    - git add "$fileName"
+    - git add "$fileNameCanary"
+    - git commit -m "Auto-updated file in CI"
+
+    # push the change back to the master branch of the wiki
+    - git push -f origin "HEAD:master"
